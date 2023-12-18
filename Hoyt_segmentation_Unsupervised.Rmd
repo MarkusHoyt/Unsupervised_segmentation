@@ -1,0 +1,242 @@
+---
+title: "Hoyt_Segmentation_Supervised"
+author: "Mark Hoyt"
+date: "2023-12-13"
+output: pdf_document
+---
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(rpart)
+library(rpart.plot)
+library(dplyr)
+
+df <- read.csv(file = 'C:/Users/markt/Downloads/Customer_Dataset_Data.csv')
+```
+
+```{r}
+#identifying the level of education the customer has
+df[df$EducationYears < 12, "Education_Level"] <- "No Degree"
+df[df$EducationYears >= 12 & df$EducationYears < 16, "Education_Level"] <- "HS Diploma"
+df[df$EducationYears >= 16 & df$EducationYears < 18, "Education_Level"] <- "Bachelors"
+df[df$EducationYears >= 18 & df$EducationYears < 22, "Education_Level"] <- "Masters"
+df[df$EducationYears >= 22 & df$EducationYears <= 24, "Education_Level"] <- "Doctorate"
+```
+
+```{r}
+df <- df %>%
+  select('Age','CardSpendMonth', 'PhoneCoTenure', 'VoiceOverTenure', 'EquipmentOverTenure', 'DataOverTenure', 'TVWatchingHours', 'HHIncome', 'CustomerID') 
+```
+
+```{r}
+#removing unnecessary characters from HHIncome column (i.e. $, ., ,, etc.) and making it numeric
+df <- df %>%
+  mutate(HHIncome = gsub("\\$ ", "", HHIncome))
+
+df <- df %>%
+  mutate(HHIncome = gsub(",", "", HHIncome))
+
+df <- df %>% 
+  mutate(HHIncome = as.numeric(HHIncome))
+```
+
+```{r}
+#removing unnecessary characters from CardSpendMonth column (i.e. $, ., ,, etc.) and making it numeric
+df <- df %>%
+  mutate(CardSpendMonth = gsub("\\$ ", "", CardSpendMonth))
+
+df <- df %>%
+  mutate(CardSpendMonth = gsub(",", "", CardSpendMonth))
+
+df <- df %>% 
+  mutate(CardSpendMonth = as.numeric(CardSpendMonth))
+```
+
+```{r}
+#removing unnecessary characters from VoiceOverTenure column (i.e. $, ., ,, etc.) and making it numeric
+df <- df %>%
+  mutate(VoiceOverTenure = gsub("\\$ ", "", VoiceOverTenure))
+
+df <- df %>%
+  mutate(VoiceOverTenure = gsub(",", "", VoiceOverTenure))
+
+df <- df %>% 
+  mutate(VoiceOverTenure = as.numeric(VoiceOverTenure))
+```
+
+```{r}
+#removing unnecessary characters from DataOverTenure column (i.e. $, ., ,, etc.) and making it numeric
+df <- df %>%
+  mutate(DataOverTenure = gsub("\\$ ", "", DataOverTenure))
+
+df <- df %>%
+  mutate(DataOverTenure = gsub(",", "", DataOverTenure))
+
+df <- df %>% 
+  mutate(DataOverTenure = as.numeric(DataOverTenure))
+```
+
+```{r}
+df <- df %>%
+  mutate(EquipmentOverTenure = gsub("\\$ ", "", EquipmentOverTenure))
+
+df <- df %>%
+  mutate(EquipmentOverTenure = gsub(",", "", EquipmentOverTenure))
+
+df <- df %>% 
+  mutate(EquipmentOverTenure = as.numeric(EquipmentOverTenure))
+```
+
+```{r}
+df[is.na(df)] <- 0
+
+df <- df %>% 
+   mutate_all(~replace(., is.nan(.), 0))
+```
+
+```{r}
+df$AVGmonthlyvoice <- df$VoiceOverTenure/df$PhoneCoTenure
+df$AVGmonthlyData <- df$DataOverTenure/df$PhoneCoTenure
+df$AVGmonthlyEquipment <- df$EquipmentOverTenure/df$PhoneCoTenure
+df$AVGmonthlyValue <- df$AVGmonthlyvoice + df$AVGmonthlyData + df$AVGmonthlyEquipment / 3
+```
+
+```{r}
+points <- df %>% select(-c("CustomerID"))
+print(head(points))
+```
+
+```{r}
+points <- scale(points)
+print(head(points))
+```
+
+```{r}
+points[is.na(points)] = 0
+```
+
+```{r}
+#set seed for code reproducibility
+set.seed(1223)
+NUM_CLUSTERS <- 6
+kclust <- kmeans(points, centers = NUM_CLUSTERS)
+
+#add segments to original dataset
+df$kmeans_segment <- as.factor(kclust$cluster)
+
+print(df %>% relocate(kmeans_segment))
+```
+
+```{r}
+ks <- 1:12
+tot_within_ss <- sapply(ks, function(k) {
+    set.seed(1223)
+    cl <- kmeans(points, k)
+    cl$tot.withinss
+})
+plot(ks, tot_within_ss, type = "b")
+```
+
+```{r}
+set.seed(1223)
+NUM_CLUSTERS <- 6
+kclust <- kmeans(points, centers = NUM_CLUSTERS, nstart=10)
+
+#add segments to original dataset
+df$kmeans_segment <- as.factor(kclust$cluster)
+```
+
+```{r}
+df %>% select(-c("CustomerID")) %>% add_count(kmeans_segment) %>%
+  group_by(kmeans_segment,n) %>% 
+  summarise_all("mean")
+```
+
+```{r}
+set.seed(1223)
+NUM_CLUSTERS <- 6
+points <- df %>% select(-c("CustomerID", "kmeans_segment"))
+points <- scale(points)
+points[is.na(points)] = 0
+kclust <- kmeans(points, centers = NUM_CLUSTERS, nstart = 10)
+
+#add segments to original dataset
+df$kmeans_segment <- as.factor(kclust$cluster)
+
+df %>% select(-c("CustomerID")) %>% add_count(kmeans_segment) %>%
+  group_by(kmeans_segment,n) %>% 
+  summarise_all("mean")
+```
+
+```{r}
+g <- ggplot(df)+geom_point(aes(x=AVGmonthlyValue,y=PhoneCoTenure,colour=kmeans_segment))
+print(g)
+```
+
+```{r}
+set.seed(1223)
+points <- df %>% select(PhoneCoTenure,AVGmonthlyValue)
+points <- scale(points)
+points[is.na(points)] = 0
+kclust <- kmeans(points, centers = NUM_CLUSTERS, nstart = 10)
+
+#add segments to original dataset
+df$kmeans_segment <- as.factor(kclust$cluster)
+
+df %>% select(-c("CustomerID")) %>% 
+  group_by(kmeans_segment) %>% 
+  summarise_all("mean")
+```
+
+```{r}
+g <- ggplot(df)+geom_point(aes(x=AVGmonthlyValue,y=PhoneCoTenure,colour=kmeans_segment))
+print(g)
+```
+
+```{r}
+write.csv(df, "Unsupervised_Customer.csv", row.names=FALSE)
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
